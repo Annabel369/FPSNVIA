@@ -59,3 +59,44 @@ Se você for escrever a descrição no GitHub, aqui está uma sugestão de "Dife
     Baixo Consumo: Feito em Python, utiliza NVML oficial para dados da GPU.
 
     Sem Injeção de Código: Não precisa de comandos extras na Steam, evitando que jogos fechem por conflito de bibliotecas.
+
+O Arquivo de Serviço Final (/etc/systemd/system/creeper-stats.service)
+
+Abra o arquivo para edição:
+Bash
+
+sudo nano /etc/systemd/system/creeper-stats.service
+
+Apague o que estiver lá e cole este bloco ajustado:
+Ini, TOML
+
+[Unit]
+Description=Agente de Performance Creeper - Amauri
+After=network.target
+
+[Service]
+# Caminho exato para o Python do Venv e para o seu script fps.py
+ExecStart=/root/meu_agente_env/bin/python3 /root/fps.py
+Restart=always
+RestartSec=5
+User=root
+WorkingDirectory=/root
+
+[Install]
+WantedBy=multi-user.target
+
+Comandos para ativar agora:
+
+    Recarregue o sistema: sudo systemctl daemon-reload
+
+    Habilite para iniciar no boot: sudo systemctl enable creeper-stats.service
+
+    Inicie o serviço: sudo systemctl restart creeper-stats.service
+
+    Confira se está rodando: sudo systemctl status creeper-stats.service
+
+Dica para o Futuro:
+
+Se você precisar alterar o Fator de Correção no seu fps.py, lembre-se que após salvar o arquivo você precisa reiniciar o serviço para as mudanças valerem no visor: sudo systemctl restart creeper-stats.service
+
+Agora seu agente fps.py está oficializado como um processo do sistema Debian!
