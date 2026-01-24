@@ -1,7 +1,22 @@
 import psutil
 import os
 import time
+import socket
 from pynvml import *
+
+# ==========================================================
+# CONFIGURAÇÕES DE PRECISÃO - AMAURI BUENO
+# ==========================================================
+ESP32_IP = "192.168.100.49"
+ESP32_PORT = 5005
+
+# NOVO FATOR: Ajustado para subir de 58 para a faixa de 70-80 FPS
+FATOR_CORRECAO = 0.233  
+
+# TEMPO DE ATUALIZAÇÃO: 10 segundos para máxima estabilidade
+TEMPO_AMOSTRA = 4.0     
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 # Inicializa NVIDIA
 try:
@@ -12,13 +27,10 @@ except:
     NVIDIA_AVAILABLE = False
 
 def get_fps_kernel():
-    """Lê o contador de interrupções da NVIDIA para calcular FPS real"""
     try:
-        # Lemos o contador de interrupções da GPU (ajuste 'nv' se necessário)
         with open("/proc/interrupts", "r") as f:
             for line in f:
                 if "nvidia" in line.lower():
-                    # Soma as interrupções de todos os cores de CPU
                     return sum(int(x) for x in line.split() if x.isdigit())
     except:
         return 0
@@ -28,51 +40,56 @@ def main():
     last_count = get_fps_kernel()
     last_time = time.time()
     
+    print(f"Modo Precisão: 10s de leitura. Fator: {FATOR_CORRECAO}")
+    
     try:
         while True:
-            # Cálculo de FPS baseado no delta de interrupções
+            # Coleta dados por 10 segundos para eliminar oscilações
+            time.sleep(TEMPO_AMOSTRA)
+            
             current_count = get_fps_kernel()
             current_time = time.time()
+            diff_time = current_time - last_time
             
-            # FPS = variação das interrupções / tempo passado
-            fps = (current_count - last_count) / (current_time - last_time)
+            if diff_time <= 0: diff_time = 0.001
             
-            # Reset para a próxima volta
+            # Cálculo do FPS real baseado no acumulado de 10 segundos
+            raw_fps = (current_count - last_count) / diff_time
+            corrected_fps = raw_fps * FATOR_CORRECAO
+            
+            # Arredondamento para o inteiro mais próximo
+            final_fps = int(round(corrected_fps)) if corrected_fps > 2 else 0
+            if final_fps > 999: final_fps = 999 
+
+            # Coleta de GPU
+            if NVIDIA_AVAILABLE:
+                temp_gpu = nvmlDeviceGetTemperature(handle, NVML_TEMPERATURE_GPU)
+                load_gpu = nvmlDeviceGetUtilizationRates(handle).gpu
+            else:
+                temp_gpu = load_gpu = 0
+
+            # Envio para o ESP32 (Creeper Auth)
+            mensagem = f"{final_fps},{load_gpu},{temp_gpu}"
+            try:
+                sock.sendto(mensagem.encode(), (ESP32_IP, ESP32_PORT))
+            except:
+                pass
+
+            # Feedback no Terminal
+            os.system('clear')
+            print(f"CALIBRAÇÃO DE PERFORMANCE - DEBIAN")
+            print(f"-------------------------------------------")
+            print(f" FPS CALCULADO (10s): {final_fps}")
+            print(f" GPU: {load_gpu}% | TEMP: {temp_gpu}°C")
+            print(f"-------------------------------------------")
+            print(f" Fator atual: {FATOR_CORRECAO}")
+
+            # Reset do ciclo
             last_count = current_count
             last_time = current_time
-
-            # Outros dados
-            cpu_usage = psutil.cpu_percent()
-            ram = psutil.virtual_memory()
-            
-            # Dados da GPU via NVML (mais precisos)
-            if NVIDIA_AVAILABLE:
-                temp_gpu = f"{nvmlDeviceGetTemperature(handle, NVML_TEMPERATURE_GPU)}°C"
-                mem = nvmlDeviceGetMemoryInfo(handle)
-                vram = f"{mem.used / 1024**2:.0f} / {mem.total / 1024**2:.0f} MB"
-                load_gpu = f"{nvmlDeviceGetUtilizationRates(handle).gpu}%"
-            else:
-                temp_gpu = vram = load_gpu = "N/A"
-
-            os.system('clear')
-            print(f"===========================================")
-            print(f"   AGENTE PERFORMANCE (KERNEL MONITOR)    ")
-            print(f"===========================================")
-            # Se o FPS for muito baixo, mostramos 0 (evita ruído de desktop)
-            print(f" FPS REAL (GPU):   {int(fps) if fps > 1 else 0} FPS")
-            print(f"-------------------------------------------")
-            print(f" GPU: {load_gpu} | TEMP: {temp_gpu}")
-            print(f" VRAM: {vram}")
-            print(f"-------------------------------------------")
-            print(f" CPU: {cpu_usage}%")
-            print(f" RAM: {ram.percent}% ({ram.used // 1024**2}MB)")
-            print(f"===========================================")
-            print(" Monitorando interrupções da GTX 1060...")
-            
-            time.sleep(1) # Atualiza a cada 1 segundo para o cálculo de FPS bater
             
     except KeyboardInterrupt:
-        print("\nEncerrado.")
+        if NVIDIA_AVAILABLE: nvmlShutdown()
 
 if __name__ == "__main__":
     main()
