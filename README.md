@@ -3,7 +3,13 @@
 Se você formatar o PC ou quiser disponibilizar para o público, estes são os passos exatos:
 1. Dependências do Sistema (S.O.)
 
-Primeiro, instale as ferramentas base para leitura de hardware e sensores no Debian:
+#Windows 10/11
+
+    pip install psutil nvidia-ml-py
+
+#Debian 13
+
+
 Bash
 
 sudo apt update
